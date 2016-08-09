@@ -7,8 +7,7 @@
     "mocha": "--compilers js:babel-core/register --bail test"
   },
   "scripts": {
-    "build": "echo `pwd` && babel -q -L -D ./src/ --out-dir ./dist/",
-    "prepublish": "npm run clean && npm run build",
+    "build": "babel -q -L -D ./src/ --out-dir ./dist/",
     "test": "./node_modules/.bin/mocha $npm_package_options_mocha",
     "clean": "rm -rf dist/"
   },
@@ -55,7 +54,6 @@
     "node": ">= 0.10"
   },
   "dependencies": {
-    
     "bookshelf-page": "0.3.2",
     "lodash": "4.13.1"
   }
