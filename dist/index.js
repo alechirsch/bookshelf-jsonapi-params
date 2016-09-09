@@ -70,8 +70,6 @@ exports.default = function (Bookshelf) {
         var _opts$page = _opts.page;
         var page = _opts$page === undefined ? {} : _opts$page;
         var filter = _opts.filter;
-        var _opts$filterType = _opts.filterType;
-        var filterType = _opts$filterType === undefined ? {} : _opts$filterType;
 
         var filterTypes = ['like', 'not', 'lt', 'gt', 'lte', 'gte'];
 
@@ -151,69 +149,58 @@ exports.default = function (Bookshelf) {
 
                     (0, _lodash.forEach)(filterValues, function (value, key) {
 
-                        // Determine if there are multiple filters to be applied
-                        value = value.toString().indexOf(',') !== -1 ? value.split(',') : value;
+                        // If the value is a filter type
+                        if ((0, _lodash.isObjectLike)(value)) {
+                            // Format column names of filter types
+                            var filterTypeValues = _this.format(value);
 
-                        qb.whereIn.apply(qb, [key, value]);
-                    });
-                });
-            }
-        };
+                            // Check if filter type is valid
+                            if ((0, _lodash.includes)(filterTypes, key)) {
+                                // Loop through each value for the valid filter type
+                                (0, _lodash.forEach)(filterTypeValues, function (typeValue, typeKey) {
 
-        /**
-         * Build a query based on the `filtersType` parameter.
-         * @param  filterTypeValues {object|array}
-         */
-        internals.buildFiltersType = function (filterTypeValues) {
-            if ((0, _lodash.isObjectLike)(filterTypeValues) && !(0, _lodash.isEmpty)(filterTypeValues)) {
+                                    // Determine if there are multiple filters to be applied
+                                    var valueArray = typeValue.toString().indexOf(',') !== -1 ? typeValue.split(',') : typeValue;
 
-                // format the column names of the filters
-                filterTypeValues = _this.format(filterTypeValues);
+                                    // Attach different query for each type
+                                    if (key === 'like') {
+                                        if ((0, _lodash.isArray)(valueArray)) {
+                                            qb.where(function (qbWhere) {
 
-                // build the filter query
-                internals.model.query(function (qb) {
+                                                (0, _lodash.forEach)(valueArray, function (val, index) {
 
-                    // Loop through each filter type
-                    (0, _lodash.forEach)(filterTypeValues, function (obj, type) {
-
-                        // Check if filter type is valid
-                        if ((0, _lodash.isObjectLike)(obj) && (0, _lodash.includes)(filterTypes, type)) {
-
-                            // Loop through each value for the valid filter type
-                            (0, _lodash.forEach)(obj, function (value, key) {
-
-                                // Determine if there are multiple filters to be applied
-                                var valueArray = value.toString().indexOf(',') !== -1 ? value.split(',') : value;
-
-                                // Attach different query for each type
-                                if (type === 'like') {
-                                    if ((0, _lodash.isArray)(valueArray)) {
-                                        qb.where(function (qbWhere) {
-                                            (0, _lodash.forEach)(valueArray, function (val, index) {
-                                                val = '%' + val + '%';
-                                                if (index === 0) {
-                                                    qbWhere.where(key, 'like', val);
-                                                } else {
-                                                    qbWhere.orWhere(key, 'like', val);
-                                                }
+                                                    val = '%' + val + '%';
+                                                    if (index === 0) {
+                                                        qbWhere.where(Bookshelf.knex.raw('LOWER(' + typeKey + ') like LOWER(?)', [val]));
+                                                    } else {
+                                                        qbWhere.orWhere(Bookshelf.knex.raw('LOWER(' + typeKey + ') like LOWER(?)', [val]));
+                                                    }
+                                                });
                                             });
-                                        });
-                                    } else {
-                                        qb.where(key, 'like', '%' + value + '%');
+                                        } else {
+                                            qb.where(Bookshelf.knex.raw('LOWER(' + typeKey + ') like LOWER(?)', ['%' + typeValue + '%']));
+                                        }
+                                    } else if (key === 'not') {
+                                        qb.whereNotIn.apply(qb, [typeKey, valueArray]);
+                                    } else if (key === 'lt') {
+                                        qb.where(typeKey, '<', typeValue);
+                                    } else if (key === 'gt') {
+                                        qb.where(typeKey, '>', typeValue);
+                                    } else if (key === 'lte') {
+                                        qb.where(typeKey, '<=', typeValue);
+                                    } else if (key === 'gte') {
+                                        qb.where(typeKey, '>=', typeValue);
                                     }
-                                } else if (type === 'not') {
-                                    qb.whereNotIn.apply(qb, [key, valueArray]);
-                                } else if (type === 'lt') {
-                                    qb.where(key, '<', value);
-                                } else if (type === 'gt') {
-                                    qb.where(key, '>', value);
-                                } else if (type === 'lte') {
-                                    qb.where(key, '<=', value);
-                                } else if (type === 'gte') {
-                                    qb.where(key, '>=', value);
-                                }
-                            });
+                                });
+                            }
                         }
+                        // If the value is an equality filter
+                        else {
+                                // Determine if there are multiple filters to be applied
+                                value = value.toString().indexOf(',') !== -1 ? value.split(',') : value;
+
+                                qb.whereIn.apply(qb, [key, value]);
+                            }
                     });
                 });
             }
@@ -267,30 +254,17 @@ exports.default = function (Bookshelf) {
         internals.buildSort = function () {
             var sortValues = arguments.length <= 0 || arguments[0] === undefined ? [] : arguments[0];
 
+
             if ((0, _lodash.isArray)(sortValues) && !(0, _lodash.isEmpty)(sortValues)) {
                 (function () {
 
                     var sortDesc = [];
 
-                    var relations = [];
-
                     for (var i = 0; i < sortValues.length; ++i) {
-                        var desc = false;
+
                         // Determine if the sort should be descending
-                        if (typeof sortValues[i] === 'string' && (sortValues[i][0] === '-' || sortValues[i][0] === '_')) {
-                            sortValues[i] = sortValues[i].substring(1, sortValues[i].length);
-                            desc = true;
-                        }
-
-                        if (sortValues[i].indexOf('.') !== -1) {
-                            var pair = sortValues[i].split('.');
-                            relations.push(pair[0]);
-                            sortValues[i] = pair[1];
-                        } else {
-                            relations.push('');
-                        }
-
-                        if (desc) {
+                        if (typeof sortValues[i] === 'string' && sortValues[i][0] === '-') {
+                            sortValues[i] = sortValues[i].substring(1);
                             sortDesc.push(sortValues[i]);
                         }
                     }
@@ -299,12 +273,9 @@ exports.default = function (Bookshelf) {
                     sortDesc = internals.formatColumnNames(sortDesc);
                     sortValues = internals.formatColumnNames(sortValues);
 
-                    (0, _lodash.forEach)(sortValues, function (sortBy, idx) {
-                        var column = sortBy;
-                        if (relations[idx] !== '') {
-                            column = relations[idx] + '.' + sortBy;
-                        };
-                        internals.model.orderBy(column, sortDesc.indexOf(sortBy) === -1 ? 'asc' : 'desc');
+                    (0, _lodash.forEach)(sortValues, function (sortBy) {
+
+                        internals.model.orderBy(sortBy, sortDesc.indexOf(sortBy) === -1 ? 'asc' : 'desc');
                     });
                 })();
             }
@@ -383,9 +354,6 @@ exports.default = function (Bookshelf) {
 
         // Apply filters
         internals.buildFilters(filter);
-
-        // Apply filter types
-        internals.buildFiltersType(filterType);
 
         // Apply sorting
         internals.buildSort(sort);
