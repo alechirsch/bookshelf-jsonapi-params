@@ -6,6 +6,10 @@ Object.defineProperty(exports, "__esModule", {
 
 var _lodash = require('lodash');
 
+var _inflection = require('inflection');
+
+var _inflection2 = _interopRequireDefault(_inflection);
+
 var _bookshelfPage = require('bookshelf-page');
 
 var _bookshelfPage2 = _interopRequireDefault(_bookshelfPage);
@@ -86,6 +90,156 @@ exports.default = function (Bookshelf) {
         });
 
         /**
+         * Build a query for relational dependencies of filtering and sorting
+         * @param   filterValues {object}
+         * @param   sortValues {object}
+         */
+        internals.buildDependencies = function (filterValues, sortValues) {
+
+            var relationHash = {};
+            // Find relations in fitlerValues
+            if ((0, _lodash.isObjectLike)(filterValues) && !(0, _lodash.isEmpty)(filterValues)) {
+
+                // Loop through each filter value
+                (0, _lodash.forEach)(filterValues, function (value, key) {
+
+                    // If the filter is not an equality filter
+                    if ((0, _lodash.isObjectLike)(value)) {
+                        if (!(0, _lodash.isEmpty)(value)) {
+                            (0, _lodash.forEach)(value, function (typeValue, typeKey) {
+
+                                // Add relations to the relationHash
+                                internals.buildDependenciesHelper(typeKey, relationHash);
+                            });
+                        }
+                    }
+                    // If the filter is an equality filter
+                    else {
+                            internals.buildDependenciesHelper(key, relationHash);
+                        }
+                });
+            }
+
+            // Find relations in sortValues
+            if ((0, _lodash.isObjectLike)(sortValues) && !(0, _lodash.isEmpty)(sortValues)) {
+
+                // Loop through each sort value
+                (0, _lodash.forEach)(sortValues, function (value) {
+
+                    // If the sort value is descending, remove the dash
+                    if (value.startsWith('-')) {
+                        value = value.substr(1);
+                    }
+                    // Add relations to the relationHash
+                    internals.buildDependenciesHelper(value, relationHash);
+                });
+            }
+
+            // Need to select model.* so all of the relations are not returned, also check if there is anything in fields object
+            if ((0, _lodash.keys)(relationHash).length && (0, _lodash.keys)(fields).length) {
+                internals.model.query(function (qb) {
+
+                    qb.select(internals.modelName + '.*');
+                });
+            }
+            // Recurse on each of the relations in relationHash
+            (0, _lodash.forIn)(relationHash, function (value, key) {
+
+                return internals.queryRelations(value, key, _this, internals.modelName);
+            });
+        };
+
+        /**
+         * Recursive funtion to add relationships to main query to allow filtering and sorting
+         * on relationships by using left outer joins
+         * @param   relation {object}
+         * @param   relationKey {string}
+         * @param   parent {object}
+         * @param   parentKey {string}
+         */
+        internals.queryRelations = function (relation, relationKey, parentModel, parentKey) {
+
+            // Add left outer joins for the relation
+            var relatedData = parentModel[relationKey]().relatedData;
+
+            internals.model.query(function (qb) {
+
+                var foreignKey = relatedData.foreignKey ? relatedData.foreignKey : _inflection2.default.singularize(relatedData.parentTableName) + '_' + relatedData.parentIdAttribute;
+                if (relatedData.type === 'hasOne' || relatedData.type === 'hasMany') {
+                    qb.leftOuterJoin(relatedData.targetTableName + ' as ' + relationKey, parentKey + '.' + relatedData.parentIdAttribute, relationKey + '.' + foreignKey);
+                } else if (relatedData.type === 'belongsTo') {
+                    qb.leftOuterJoin(relatedData.targetTableName + ' as ' + relationKey, parentKey + '.' + foreignKey, relationKey + '.' + relatedData.targetIdAttribute);
+                } else if (relatedData.type === 'belongsToMany') {
+                    var otherKey = relatedData.otherKey ? relatedData.otherKey : _inflection2.default.singularize(relatedData.targetTableName) + '_id';
+                    var joinTableName = relatedData.joinTableName ? relatedData.joinTableName : relatedData.throughTableName;
+
+                    qb.leftOuterJoin(joinTableName + ' as ' + relationKey + '_' + joinTableName, parentKey + '.' + relatedData.parentIdAttribute, relationKey + '_' + joinTableName + '.' + foreignKey);
+                    qb.leftOuterJoin(relatedData.targetTableName + ' as ' + relationKey, relationKey + '_' + joinTableName + '.' + otherKey, relationKey + '.' + relatedData.targetIdAttribute);
+                } else if ((0, _lodash.includes)(relatedData.type, 'morph')) {
+                    (function () {
+                        // Get the morph type and id
+                        var morphType = relatedData.columnNames[0] ? relatedData.columnNames[0] : relatedData.morphName + '_type';
+                        var morphId = relatedData.columnNames[1] ? relatedData.columnNames[0] : relatedData.morphName + '_id';
+                        if (relatedData.type === 'morphOne' || relatedData.type === 'morphMany') {
+
+                            qb.leftOuterJoin(relatedData.targetTableName + ' as ' + relationKey, function (qbJoin) {
+
+                                qbJoin.on(relationKey + '.' + morphId, '=', parentKey + '.' + relatedData.parentIdAttribute);
+                            }).where(relationKey + '.' + morphType, '=', relatedData.morphValue);
+                        } else if (relatedData.type === 'morphTo') {
+                            // Not implemented
+                        }
+                    })();
+                }
+            });
+
+            if (!(0, _lodash.keys)(relation).length) {
+                return;
+            }
+            (0, _lodash.forIn)(relation, function (value, key) {
+
+                return internals.queryRelations(value, key, parentModel[relationKey]().relatedData.target.forge(), relationKey);
+            });
+        };
+
+        /**
+         * Adds relations included in the key to the relationHash, used in buildDependencies
+         * @param   key {string}
+         * @param   relationHash {object}
+         */
+        internals.buildDependenciesHelper = function (key, relationHash) {
+
+            if ((0, _lodash.includes)(key, '.')) {
+                // The last item in the chain is a column name, not a table. Do not include column name in relationHash
+                key = key.substring(0, key.lastIndexOf('.'));
+                if (!(0, _lodash.has)(relationHash, key)) {
+                    (function () {
+                        var level = relationHash;
+                        var relations = key.split('.');
+                        var relationModel = _this.clone();
+
+                        // Traverse the relationHash object and set new relation if it does not exist
+                        (0, _lodash.forEach)(relations, function (relation) {
+
+                            // Check if valid relationship
+                            if (typeof relationModel[relation] === 'function' && relationModel[relation]().relatedData.type) {
+                                if (!level[relation]) {
+                                    level[relation] = {};
+                                }
+                                level = level[relation];
+
+                                // Set relation model to the next item in the chain
+                                relationModel = relationModel.related(relation).relatedData.target.forge();
+                            } else {
+                                return false;
+                            }
+                        });
+                    })();
+                }
+            }
+        };
+
+        /**
          * Build a query based on the `fields` parameter.
          * @param  fieldNames {object}
          */
@@ -122,7 +276,7 @@ exports.default = function (Bookshelf) {
 
                                 var relationId = relation + '_id';
 
-                                if (!internals.isManyRelation(relation) && !(0, _lodash.includes)(fieldNames[relation], relationId)) {
+                                if (!internals.isManyRelation(relation, model) && !(0, _lodash.includes)(fieldNames[relation], relationId)) {
 
                                     qb.column.apply(qb, [relationId]);
                                 }
@@ -140,9 +294,8 @@ exports.default = function (Bookshelf) {
         internals.buildFilters = function (filterValues) {
 
             if ((0, _lodash.isObjectLike)(filterValues) && !(0, _lodash.isEmpty)(filterValues)) {
-
                 // format the column names of the filters
-                filterValues = _this.format(filterValues);
+                //filterValues = this.format(filterValues);
 
                 // build the filter query
                 internals.model.query(function (qb) {
@@ -152,58 +305,95 @@ exports.default = function (Bookshelf) {
                         // If the value is a filter type
                         if ((0, _lodash.isObjectLike)(value)) {
                             // Format column names of filter types
-                            var filterTypeValues = _this.format(value);
+                            var filterTypeValues = value;
 
                             // Check if filter type is valid
                             if ((0, _lodash.includes)(filterTypes, key)) {
                                 // Loop through each value for the valid filter type
                                 (0, _lodash.forEach)(filterTypeValues, function (typeValue, typeKey) {
 
+                                    // Remove all but the last table name, need to get number of dots
+                                    typeKey = internals.formatRelation(typeKey);
+
                                     // Determine if there are multiple filters to be applied
                                     var valueArray = typeValue.toString().indexOf(',') !== -1 ? typeValue.split(',') : typeValue;
 
+                                    // If the column exists as an equality filter, add 'or' to 'where'
+                                    var where = (0, _lodash.hasIn)(filterValues, typeKey) ? 'orWhere' : 'where';
+
                                     // Attach different query for each type
                                     if (key === 'like') {
+
+                                        // Need to add double quotes for each table/column name, this is needed if there is a relationship with a capital letter
+                                        typeKey = '"' + typeKey.replace('.', '"."') + '"';
                                         if ((0, _lodash.isArray)(valueArray)) {
                                             qb.where(function (qbWhere) {
 
-                                                (0, _lodash.forEach)(valueArray, function (val, index) {
+                                                (0, _lodash.forEach)(valueArray, function (val) {
 
                                                     val = '%' + val + '%';
-                                                    if (index === 0) {
-                                                        qbWhere.where(Bookshelf.knex.raw('LOWER(' + typeKey + ') like LOWER(?)', [val]));
-                                                    } else {
-                                                        qbWhere.orWhere(Bookshelf.knex.raw('LOWER(' + typeKey + ') like LOWER(?)', [val]));
+
+                                                    qbWhere[where](Bookshelf.knex.raw('LOWER(' + typeKey + ') like LOWER(?)', [val]));
+
+                                                    // Change to orWhere after the first where
+                                                    if (where === 'where') {
+                                                        where = 'orWhere';
                                                     }
                                                 });
                                             });
                                         } else {
-                                            qb.where(Bookshelf.knex.raw('LOWER(' + typeKey + ') like LOWER(?)', ['%' + typeValue + '%']));
+                                            qb[where](Bookshelf.knex.raw('LOWER(' + typeKey + ') like LOWER(?)', ['%' + typeValue + '%']));
                                         }
                                     } else if (key === 'not') {
-                                        qb.whereNotIn.apply(qb, [typeKey, valueArray]);
+                                        qb[where + 'NotIn'].apply(qb, [typeKey, valueArray]);
                                     } else if (key === 'lt') {
-                                        qb.where(typeKey, '<', typeValue);
+                                        qb[where](typeKey, '<', typeValue);
                                     } else if (key === 'gt') {
-                                        qb.where(typeKey, '>', typeValue);
+                                        qb[where](typeKey, '>', typeValue);
                                     } else if (key === 'lte') {
-                                        qb.where(typeKey, '<=', typeValue);
+                                        qb[where](typeKey, '<=', typeValue);
                                     } else if (key === 'gte') {
-                                        qb.where(typeKey, '>=', typeValue);
+                                        qb[where](typeKey, '>=', typeValue);
                                     }
                                 });
                             }
                         }
                         // If the value is an equality filter
                         else {
+
+                                // Remove all but the last table name, need to get number of dots
+                                key = internals.formatRelation(key);
+
                                 // Determine if there are multiple filters to be applied
                                 value = value.toString().indexOf(',') !== -1 ? value.split(',') : value;
 
-                                qb.whereIn.apply(qb, [key, value]);
+                                // If the column exists as an filter type, add 'or' to 'where'
+                                var where = 'where';
+                                (0, _lodash.forEach)(filterTypes, function (typeKey) {
+
+                                    if ((0, _lodash.hasIn)(filterValues, typeKey)) {
+                                        where = 'orWhere';
+                                    }
+                                });
+
+                                qb[where + 'In'].apply(qb, [key, value]);
                             }
                     });
                 });
             }
+        };
+
+        /**
+         * Takes in an attribute string like a.b.c.d and returns c.d
+         * @param   attribute {string}
+         */
+        internals.formatRelation = function (attribute) {
+
+            if ((0, _lodash.includes)(attribute, '.')) {
+                var splitKey = attribute.split('.');
+                attribute = splitKey[splitKey.length - 2] + '.' + splitKey[splitKey.length - 1];
+            }
+            return attribute;
         };
 
         /**
@@ -228,7 +418,7 @@ exports.default = function (Bookshelf) {
 
                                     var relationId = internals.modelName + '_id';
 
-                                    if (!internals.isBelongsToRelation(relation) && !(0, _lodash.includes)(fieldNames[relation], relationId)) {
+                                    if (!internals.isBelongsToRelation(relation, _this) && !(0, _lodash.includes)(fieldNames[relation], relationId)) {
 
                                         qb.column.apply(qb, [relationId]);
                                     }
@@ -316,12 +506,16 @@ exports.default = function (Bookshelf) {
 
         /**
          * Determines if the specified relation is a `belongsTo` type.
-         * @param  relationName {string}
-         * @return {boolean}
+         * @param   relationName {string}
+         * @param   model {object}
+         * @return  {boolean}
          */
-        internals.isBelongsToRelation = function (relationName) {
+        internals.isBelongsToRelation = function (relationName, model) {
 
-            var relationType = _this.related(relationName).relatedData.type.toLowerCase();
+            if (!model.related(relationName)) {
+                return false;
+            }
+            var relationType = model.related(relationName).relatedData.type.toLowerCase();
 
             if (relationType !== undefined && relationType === 'belongsto') {
 
@@ -333,14 +527,39 @@ exports.default = function (Bookshelf) {
 
         /**
          * Determines if the specified relation is a `many` type.
-         * @param  relationName {string}
-         * @return {boolean}
+         * @param   relationName {string}
+         * @param   model {object}
+         * @return  {boolean}
          */
-        internals.isManyRelation = function (relationName) {
+        internals.isManyRelation = function (relationName, model) {
 
-            var relationType = _this.related(relationName).relatedData.type.toLowerCase();
+            if (!model.related(relationName)) {
+                return false;
+            }
+            var relationType = model.related(relationName).relatedData.type.toLowerCase();
 
             if (relationType !== undefined && relationType.indexOf('many') > 0) {
+
+                return true;
+            }
+
+            return false;
+        };
+
+        /**
+         * Determines if the specified relation is a `hasone` type.
+         * @param   relationName {string}
+         * @param   model {object}
+         * @return  {boolean}
+         */
+        internals.ishasOneRelation = function (relationName, model) {
+
+            if (!model.related(relationName)) {
+                return false;
+            }
+            var relationType = model.related(relationName).relatedData.type.toLowerCase();
+
+            if (relationType !== undefined && relationType === 'hasone') {
 
                 return true;
             }
@@ -351,6 +570,9 @@ exports.default = function (Bookshelf) {
         ////////////////////////////////
         /// Process parameters
         ////////////////////////////////
+
+        // Apply relational dependencies for filters and sorting
+        internals.buildDependencies(filter, sort);
 
         // Apply filters
         internals.buildFilters(filter);
