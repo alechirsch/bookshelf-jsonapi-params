@@ -344,7 +344,7 @@ exports.default = function (Bookshelf) {
                                             qb[where](Bookshelf.knex.raw('LOWER(' + typeKey + ') like LOWER(?)', ['%' + typeValue + '%']));
                                         }
                                     } else if (key === 'not') {
-                                        qb[where + 'NotIn'].apply(qb, [typeKey, valueArray]);
+                                        qb[where + 'NotIn'](typeKey, valueArray);
                                     } else if (key === 'lt') {
                                         qb[where](typeKey, '<', typeValue);
                                     } else if (key === 'gt') {
@@ -370,12 +370,12 @@ exports.default = function (Bookshelf) {
                                 var where = 'where';
                                 (0, _lodash.forEach)(filterTypes, function (typeKey) {
 
-                                    if ((0, _lodash.hasIn)(filterValues, typeKey)) {
+                                    if ((0, _lodash.hasIn)(filterValues[typeKey], key)) {
                                         where = 'orWhere';
                                     }
                                 });
 
-                                qb[where + 'In'].apply(qb, [key, value]);
+                                qb[where + 'In'](key, value);
                             }
                     });
                 });
