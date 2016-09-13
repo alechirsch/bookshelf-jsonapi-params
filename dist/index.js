@@ -312,7 +312,7 @@ exports.default = function (Bookshelf) {
                                 (0, _lodash.forEach)(filterTypeValues, function (typeValue, typeKey) {
 
                                     // Remove all but the last table name, need to get number of dots
-                                    typeKey = internals.formatRelation(typeKey);
+                                    typeKey = internals.formatRelation(internals.formatColumnNames([typeKey])[0]);
 
                                     // Determine if there are multiple filters to be applied
                                     var valueArray = typeValue.toString().indexOf(',') !== -1 ? typeValue.split(',') : typeValue;
@@ -361,7 +361,8 @@ exports.default = function (Bookshelf) {
                         else {
 
                                 // Remove all but the last table name, need to get number of dots
-                                key = internals.formatRelation(key);
+
+                                key = internals.formatRelation(internals.formatColumnNames([key])[0]);
 
                                 // Determine if there are multiple filters to be applied
                                 value = value.toString().indexOf(',') !== -1 ? value.split(',') : value;
