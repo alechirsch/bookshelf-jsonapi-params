@@ -483,21 +483,26 @@ exports.default = function (Bookshelf) {
 
             (0, _lodash.forEach)(columnNames, function (value, key) {
 
-                var columns = void 0;
+                var columns = {};
+                if ((0, _lodash.includes)(value, '.')) {
+                    columns[columnNames[key].substr(columnNames[key].lastIndexOf('.'))] = undefined;
 
-                // Convert column names to an object so it can
-                // be passed to Model#format
-                if ((0, _lodash.isArray)(columnNames[key])) {
-                    columns = (0, _lodash.zipObject)(columnNames[key], null);
+                    columnNames[key] = columnNames[key].substring(0, columnNames[key].lastIndexOf('.')) + (0, _lodash.keys)(_this.format(columns));
                 } else {
-                    columns = (0, _lodash.zipObject)(columnNames, null);
-                }
+                    // Convert column names to an object so it can
+                    // be passed to Model#format
+                    if ((0, _lodash.isArray)(columnNames[key])) {
+                        columns = (0, _lodash.zipObject)(columnNames[key], null);
+                    } else {
+                        columns = (0, _lodash.zipObject)(columnNames, null);
+                    }
 
-                // Format column names using Model#format
-                if ((0, _lodash.isArray)(columnNames[key])) {
-                    columnNames[key] = (0, _lodash.keys)(_this.format(columns));
-                } else {
-                    columnNames = (0, _lodash.keys)(_this.format(columns));
+                    // Format column names using Model#format
+                    if ((0, _lodash.isArray)(columnNames[key])) {
+                        columnNames[key] = columnNames[key].substring(0, columnNames[key].lastIndexOf('.')) + (0, _lodash.keys)(_this.format(columns));
+                    } else {
+                        columnNames = (0, _lodash.keys)(_this.format(columns));
+                    }
                 }
             });
 
