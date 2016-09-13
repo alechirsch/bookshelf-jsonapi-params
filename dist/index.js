@@ -127,7 +127,7 @@ exports.default = function (Bookshelf) {
                 (0, _lodash.forEach)(sortValues, function (value) {
 
                     // If the sort value is descending, remove the dash
-                    if (value.startsWith('-')) {
+                    if (value.indexOf('-') === 0) {
                         value = value.substr(1);
                     }
                     // Add relations to the relationHash
@@ -361,7 +361,6 @@ exports.default = function (Bookshelf) {
                         else {
 
                                 // Remove all but the last table name, need to get number of dots
-
                                 key = internals.formatRelation(internals.formatColumnNames([key])[0]);
 
                                 // Determine if there are multiple filters to be applied
@@ -485,9 +484,8 @@ exports.default = function (Bookshelf) {
 
                 var columns = {};
                 if ((0, _lodash.includes)(value, '.')) {
-                    columns[columnNames[key].substr(columnNames[key].lastIndexOf('.'))] = undefined;
-
-                    columnNames[key] = columnNames[key].substring(0, columnNames[key].lastIndexOf('.')) + (0, _lodash.keys)(_this.format(columns));
+                    columns[columnNames[key].substr(columnNames[key].lastIndexOf('.') + 1)] = undefined;
+                    columnNames[key] = columnNames[key].substring(0, columnNames[key].lastIndexOf('.')) + '.' + (0, _lodash.keys)(_this.format(columns));
                 } else {
                     // Convert column names to an object so it can
                     // be passed to Model#format
