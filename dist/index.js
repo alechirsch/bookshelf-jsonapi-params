@@ -136,7 +136,7 @@ exports.default = function (Bookshelf) {
             }
 
             // Need to select model.* so all of the relations are not returned, also check if there is anything in fields object
-            if ((0, _lodash.keys)(relationHash).length && (0, _lodash.keys)(fields).length) {
+            if ((0, _lodash.keys)(relationHash).length && !(0, _lodash.keys)(fields).length) {
                 internals.model.query(function (qb) {
 
                     qb.select(internals.modelName + '.*');
@@ -265,20 +265,19 @@ exports.default = function (Bookshelf) {
                     // for relations are processed in `buildIncludes()`
                     if (!(0, _lodash.includes)(include, fieldKey)) {
 
-                        // Add column to query
+                        // Add columns to query
                         internals.model.query(function (qb) {
 
-                            qb.column.apply(qb, [fieldValue]);
+                            qb.select(fieldNames[fieldKey]);
 
                             // JSON API considers relationships as fields, so we
                             // need to make sure the id of the relation is selected
                             (0, _lodash.forEach)(include, function (relation) {
 
-                                var relationId = relation + '_id';
-
-                                if (!internals.isManyRelation(relation, model) && !(0, _lodash.includes)(fieldNames[relation], relationId)) {
-
-                                    qb.column.apply(qb, [relationId]);
+                                if (internals.isBelongsToRelation(relation, _this)) {
+                                    var relatedData = _this.related(relation).relatedData;
+                                    var relationId = relatedData.foreignKey ? relatedData.foreignKey : _inflection2.default.singularize(relatedData.parentTableName) + '_' + relatedData.parentIdAttribute;
+                                    qb.select(relationId);
                                 }
                             });
                         });
@@ -499,7 +498,7 @@ exports.default = function (Bookshelf) {
 
                     // Format column names using Model#format
                     if ((0, _lodash.isArray)(columnNames[key])) {
-                        columnNames[key] = columnNames[key].substring(0, columnNames[key].lastIndexOf('.')) + (0, _lodash.keys)(_this.format(columns));
+                        columnNames[key] = (0, _lodash.keys)(_this.format(columns));
                     } else {
                         columnNames = (0, _lodash.keys)(_this.format(columns));
                     }
