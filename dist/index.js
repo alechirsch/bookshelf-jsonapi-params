@@ -324,65 +324,69 @@ exports.default = function (Bookshelf) {
                                     // Determine if there are multiple filters to be applied
                                     var valueArray = typeValue.toString().indexOf(',') !== -1 ? typeValue.split(',') : typeValue;
 
-                                    // If the column exists as an equality filter, add 'or' to 'where'
-                                    var where = (0, _lodash.hasIn)(filterValues, typeKey) ? 'orWhere' : 'where';
-
                                     // Attach different query for each type
                                     if (key === 'like') {
+                                        (function () {
 
-                                        // Need to add double quotes for each table/column name, this is needed if there is a relationship with a capital letter
-                                        typeKey = '"' + typeKey.replace('.', '"."') + '"';
-                                        if ((0, _lodash.isArray)(valueArray)) {
+                                            // Need to add double quotes for each table/column name, this is needed if there is a relationship with a capital letter
+                                            var formatedKey = '"' + typeKey.replace('.', '"."') + '"';
                                             qb.where(function (qbWhere) {
 
-                                                (0, _lodash.forEach)(valueArray, function (val) {
+                                                if ((0, _lodash.isArray)(valueArray)) {
+                                                    (function () {
+                                                        var where = 'where';
+                                                        (0, _lodash.forEach)(valueArray, function (val) {
 
-                                                    val = '%' + val + '%';
+                                                            val = '%' + val + '%';
 
-                                                    qbWhere[where](Bookshelf.knex.raw('LOWER(' + typeKey + ') like LOWER(?)', [val]));
+                                                            qbWhere[where](Bookshelf.knex.raw('LOWER(' + formatedKey + ') like LOWER(?)', [val]));
 
-                                                    // Change to orWhere after the first where
-                                                    if (where === 'where') {
-                                                        where = 'orWhere';
+                                                            // Change to orWhere after the first where
+                                                            if (where === 'where') {
+                                                                where = 'orWhere';
+                                                            }
+                                                        });
+                                                    })();
+                                                } else {
+                                                    qbWhere.where(Bookshelf.knex.raw('LOWER(' + formatedKey + ') like LOWER(?)', ['%' + typeValue + '%']));
+                                                }
+
+                                                // If the key is in the top level filter, filter on orWhereIn
+                                                if ((0, _lodash.hasIn)(filterValues, typeKey)) {
+                                                    // Determine if there are multiple filters to be applied
+                                                    value = filterValues[typeKey].toString().indexOf(',') !== -1 ? filterValues[typeKey].split(',') : filterValues[typeKey];
+
+                                                    if (!(0, _lodash.hasIn)(filterTypes.like, typeKey)) {
+                                                        qbWhere.orWhereIn(typeKey, value);
                                                     }
-                                                });
+                                                }
                                             });
-                                        } else {
-                                            qb[where](Bookshelf.knex.raw('LOWER(' + typeKey + ') like LOWER(?)', ['%' + typeValue + '%']));
-                                        }
+                                        })();
                                     } else if (key === 'not') {
-                                        qb[where + 'NotIn'](typeKey, valueArray);
+                                        qb.whereNotIn(typeKey, valueArray);
                                     } else if (key === 'lt') {
-                                        qb[where](typeKey, '<', typeValue);
+                                        qb.where(typeKey, '<', typeValue);
                                     } else if (key === 'gt') {
-                                        qb[where](typeKey, '>', typeValue);
+                                        qb.where(typeKey, '>', typeValue);
                                     } else if (key === 'lte') {
-                                        qb[where](typeKey, '<=', typeValue);
+                                        qb.where(typeKey, '<=', typeValue);
                                     } else if (key === 'gte') {
-                                        qb[where](typeKey, '>=', typeValue);
+                                        qb.where(typeKey, '>=', typeValue);
                                     }
                                 });
                             }
                         }
                         // If the value is an equality filter
                         else {
+                                // If the key is in the like filter, ignore the filter
+                                if (!(0, _lodash.hasIn)(filterValues.like, key)) {
+                                    // Remove all but the last table name, need to get number of dots
+                                    key = internals.formatRelation(internals.formatColumnNames([key])[0]);
 
-                                // Remove all but the last table name, need to get number of dots
-                                key = internals.formatRelation(internals.formatColumnNames([key])[0]);
-
-                                // Determine if there are multiple filters to be applied
-                                value = value.toString().indexOf(',') !== -1 ? value.split(',') : value;
-
-                                // If the column exists as an filter type, add 'or' to 'where'
-                                var where = 'where';
-                                (0, _lodash.forEach)(filterTypes, function (typeKey) {
-
-                                    if ((0, _lodash.hasIn)(filterValues[typeKey], key)) {
-                                        where = 'orWhere';
-                                    }
-                                });
-
-                                qb[where + 'In'](key, value);
+                                    // Determine if there are multiple filters to be applied
+                                    value = value.toString().indexOf(',') !== -1 ? value.split(',') : value;
+                                    qb.whereIn(key, value);
+                                }
                             }
                     });
                 });
