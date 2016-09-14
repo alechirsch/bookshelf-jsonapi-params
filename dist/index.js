@@ -258,6 +258,9 @@ exports.default = function (Bookshelf) {
                     // Add qualifying table name to avoid ambiguous columns
                     fieldNames[fieldKey] = (0, _lodash.map)(fieldNames[fieldKey], function (value) {
 
+                        if (!fieldKey) {
+                            return value;
+                        }
                         return fieldKey + '.' + value;
                     });
 
@@ -267,6 +270,10 @@ exports.default = function (Bookshelf) {
 
                         // Add columns to query
                         internals.model.query(function (qb) {
+
+                            if (!fieldKey) {
+                                qb.distinct();
+                            }
 
                             qb.select(fieldNames[fieldKey]);
 
@@ -385,6 +392,7 @@ exports.default = function (Bookshelf) {
         /**
          * Takes in an attribute string like a.b.c.d and returns c.d
          * @param   attribute {string}
+         * @return  {string}
          */
         internals.formatRelation = function (attribute) {
 
@@ -393,6 +401,19 @@ exports.default = function (Bookshelf) {
                 attribute = splitKey[splitKey.length - 2] + '.' + splitKey[splitKey.length - 1];
             }
             return attribute;
+        };
+
+        /**
+         * Takes an array from attributes and returns the only the columns and removes the table names
+         * @param   attributes {array}
+         * @return  {array}
+         */
+        internals.getColumnNames = function (attributes) {
+
+            return (0, _lodash.map)(attributes, function (attribute) {
+
+                return attribute.substr(attribute.lastIndexOf('.') + 1);
+            });
         };
 
         /**
@@ -415,13 +436,18 @@ exports.default = function (Bookshelf) {
 
                                 relations.push(_defineProperty({}, relation, function (qb) {
 
-                                    var relationId = internals.modelName + '_id';
+                                    if (!internals.isBelongsToRelation(relation, _this)) {
+                                        var relatedData = _this[relation]().relatedData;
+                                        var foreignKey = relatedData.foreignKey ? relatedData.foreignKey : _inflection2.default.singularize(relatedData.parentTableName) + '_' + relatedData.parentIdAttribute;
 
-                                    if (!internals.isBelongsToRelation(relation, _this) && !(0, _lodash.includes)(fieldNames[relation], relationId)) {
-
-                                        qb.column.apply(qb, [relationId]);
+                                        if (!(0, _lodash.includes)(fieldNames[relation], foreignKey)) {
+                                            qb.column.apply(qb, [foreignKey]);
+                                        }
                                     }
-
+                                    fieldNames[relation] = internals.getColumnNames(fieldNames[relation]);
+                                    if (!(0, _lodash.includes)(fieldNames[relation], 'id')) {
+                                        qb.column.apply(qb, ['id']);
+                                    }
                                     qb.column.apply(qb, [fieldNames[relation]]);
                                 }));
                             })();
@@ -486,6 +512,9 @@ exports.default = function (Bookshelf) {
                 if ((0, _lodash.includes)(value, '.')) {
                     columns[columnNames[key].substr(columnNames[key].lastIndexOf('.') + 1)] = undefined;
                     columnNames[key] = columnNames[key].substring(0, columnNames[key].lastIndexOf('.')) + '.' + (0, _lodash.keys)(_this.format(columns));
+                } else if ((0, _lodash.isArray)(value) && key === '' && value.length === 1 && (0, _lodash.includes)(value[0], '.')) {
+                    columns[value[0].substr(value[0].lastIndexOf('.') + 1)] = undefined;
+                    value[0] = value[0].substring(0, value[0].lastIndexOf('.')) + '.' + (0, _lodash.keys)(_this.format(columns));
                 } else {
                     // Convert column names to an object so it can
                     // be passed to Model#format
