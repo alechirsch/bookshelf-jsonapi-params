@@ -355,10 +355,7 @@ exports.default = function (Bookshelf) {
                                                 if ((0, _lodash.hasIn)(filterValues, typeKey)) {
                                                     // Determine if there are multiple filters to be applied
                                                     value = filterValues[typeKey].toString().indexOf(',') !== -1 ? filterValues[typeKey].split(',') : filterValues[typeKey];
-
-                                                    if (!(0, _lodash.hasIn)(filterTypes.like, typeKey)) {
-                                                        qbWhere.orWhereIn(typeKey, value);
-                                                    }
+                                                    qbWhere.orWhereIn(typeKey, value);
                                                 }
                                             });
                                         })();
