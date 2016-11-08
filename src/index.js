@@ -321,8 +321,8 @@ export default (Bookshelf, options = {}) => {
 
                                     // Determine if there are multiple filters to be applied
                                     let valueArray = null;
-                                    if (_isArray(typeValue)){
-                                        valueArray = split(typeValue, ',');
+                                    if (!_isArray(typeValue)){
+                                        valueArray = split(typeValue.toString(), ',');
                                     }
                                     else {
                                         valueArray = typeValue;
@@ -391,7 +391,9 @@ export default (Bookshelf, options = {}) => {
                                 key = internals.formatRelation(internals.formatColumnNames([key])[0]);
 
                                 // Determine if there are multiple filters to be applied
-                                value = value.toString().indexOf(',') !== -1 ? value.split(',') : value;
+                                if (!_isArray(value)){
+                                    value = split(value.toString(), ',');
+                                }
                                 qb.whereIn(key, value);
                             }
                         }
