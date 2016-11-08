@@ -6,6 +6,10 @@ Object.defineProperty(exports, "__esModule", {
 
 var _lodash = require('lodash');
 
+var _splitString = require('split-string');
+
+var _splitString2 = _interopRequireDefault(_splitString);
+
 var _inflection = require('inflection');
 
 var _inflection2 = _interopRequireDefault(_inflection);
@@ -322,7 +326,12 @@ exports.default = function (Bookshelf) {
                                     typeKey = internals.formatRelation(internals.formatColumnNames([typeKey])[0]);
 
                                     // Determine if there are multiple filters to be applied
-                                    var valueArray = typeValue.toString().indexOf(',') !== -1 ? typeValue.split(',') : typeValue;
+                                    var valueArray = null;
+                                    if ((0, _lodash.isArray)(typeValue)) {
+                                        valueArray = (0, _splitString2.default)(typeValue, ',');
+                                    } else {
+                                        valueArray = typeValue;
+                                    }
 
                                     // Attach different query for each type
                                     if (key === 'like') {
@@ -400,10 +409,9 @@ exports.default = function (Bookshelf) {
 
             if ((0, _lodash.includes)(attribute, '.')) {
                 var splitKey = attribute.split('.');
-                // Need to add double quotes for each table/column name, this is needed if there is a relationship with a capital letter
                 attribute = splitKey[splitKey.length - 2] + '.' + splitKey[splitKey.length - 1];
             }
-            // Add table name to before column name if no relation
+            // Add table name to before column name if no relation to avoid ambiguous columns
             else {
                     attribute = internals.modelName + '.' + attribute;
                 }
