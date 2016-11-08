@@ -327,8 +327,8 @@ exports.default = function (Bookshelf) {
 
                                     // Determine if there are multiple filters to be applied
                                     var valueArray = null;
-                                    if ((0, _lodash.isArray)(typeValue)) {
-                                        valueArray = (0, _splitString2.default)(typeValue, ',');
+                                    if (!(0, _lodash.isArray)(typeValue)) {
+                                        valueArray = (0, _splitString2.default)(typeValue.toString(), ',');
                                     } else {
                                         valueArray = typeValue;
                                     }
@@ -390,7 +390,9 @@ exports.default = function (Bookshelf) {
                                     key = internals.formatRelation(internals.formatColumnNames([key])[0]);
 
                                     // Determine if there are multiple filters to be applied
-                                    value = value.toString().indexOf(',') !== -1 ? value.split(',') : value;
+                                    if (!(0, _lodash.isArray)(value)) {
+                                        value = (0, _splitString2.default)(value.toString(), ',');
+                                    }
                                     qb.whereIn(key, value);
                                 }
                             }
