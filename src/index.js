@@ -10,6 +10,7 @@ import {
     isArray as _isArray,
     isObject as _isObject,
     isObjectLike as _isObjectLike,
+    isFunction as _isFunction,
     forIn as _forIn,
     keys as _keys,
     map as _map,
@@ -59,7 +60,7 @@ export default (Bookshelf, options = {}) => {
      *     with the model.
      * @return {Promise<Model|Collection|null>}
      */
-    const fetchJsonApi = function (opts, isCollection = true, type) {
+    const fetchJsonApi = function (opts, isCollection = true, type, additionalQuery) {
 
         opts = opts || {};
 
@@ -637,6 +638,11 @@ export default (Bookshelf, options = {}) => {
 
         // Apply sparse fieldsets
         internals.buildFields(fields);
+
+        // Apply extra query which was passed in as a parameter
+        if (_isFunction(additionalQuery)){
+            internals.model.query(additionalQuery);
+        }
 
         // Assign default paging options if they were passed to the plugin
         // and no pagination parameters were passed directly to the method.
