@@ -62,10 +62,12 @@ exports.default = function (Bookshelf) {
      * @return {Promise<Model|Collection|null>}
      */
     var fetchJsonApi = function fetchJsonApi(opts) {
+        var isCollection = arguments.length <= 1 || arguments[1] === undefined ? true : arguments[1];
+
         var _this = this;
 
-        var isCollection = arguments.length <= 1 || arguments[1] === undefined ? true : arguments[1];
         var type = arguments[2];
+        var additionalQuery = arguments[3];
 
 
         opts = opts || {};
@@ -634,6 +636,11 @@ exports.default = function (Bookshelf) {
 
         // Apply sparse fieldsets
         internals.buildFields(fields);
+
+        // Apply extra query which was passed in as a parameter
+        if ((0, _lodash.isFunction)(additionalQuery)) {
+            internals.model.query(additionalQuery);
+        }
 
         // Assign default paging options if they were passed to the plugin
         // and no pagination parameters were passed directly to the method.
