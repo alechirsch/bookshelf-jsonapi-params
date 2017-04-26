@@ -11,6 +11,7 @@ import {
     isObject as _isObject,
     isObjectLike as _isObjectLike,
     isFunction as _isFunction,
+    isNull as _isNull,
     forIn as _forIn,
     keys as _keys,
     map as _map,
@@ -391,11 +392,17 @@ export default (Bookshelf, options = {}) => {
                                 // Remove all but the last table name, need to get number of dots
                                 key = internals.formatRelation(internals.formatColumnNames([key])[0]);
 
-                                // Determine if there are multiple filters to be applied
-                                if (!_isArray(value)){
-                                    value = split(value.toString(), ',');
+
+                                if (_isNull(value)){
+                                    qb.where(key, value);
                                 }
-                                qb.whereIn(key, value);
+                                else {
+                                    // Determine if there are multiple filters to be applied
+                                    if (!_isArray(value)){
+                                        value = split(value.toString(), ',');
+                                    }
+                                    qb.whereIn(key, value);
+                                }
                             }
                         }
                     });
