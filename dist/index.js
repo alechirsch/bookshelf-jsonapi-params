@@ -391,11 +391,15 @@ exports.default = function (Bookshelf) {
                                     // Remove all but the last table name, need to get number of dots
                                     key = internals.formatRelation(internals.formatColumnNames([key])[0]);
 
-                                    // Determine if there are multiple filters to be applied
-                                    if (!(0, _lodash.isArray)(value)) {
-                                        value = (0, _splitString2.default)(value.toString(), ',');
+                                    if ((0, _lodash.isNull)(value)) {
+                                        qb.where(key, value);
+                                    } else {
+                                        // Determine if there are multiple filters to be applied
+                                        if (!(0, _lodash.isArray)(value)) {
+                                            value = (0, _splitString2.default)(value.toString(), ',');
+                                        }
+                                        qb.whereIn(key, value);
                                     }
-                                    qb.whereIn(key, value);
                                 }
                             }
                     });
