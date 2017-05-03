@@ -265,7 +265,7 @@ exports.default = function (Bookshelf) {
                     fieldNames[fieldKey] = (0, _lodash.map)(fieldNames[fieldKey], function (value) {
 
                         if (!fieldKey) {
-                            return value;
+                            return internals.modelName + '.' + value;
                         }
                         return fieldKey + '.' + value;
                     });
