@@ -256,7 +256,7 @@ export default (Bookshelf, options = {}) => {
                     fieldNames[fieldKey] = _map(fieldNames[fieldKey], (value) => {
 
                         if (!fieldKey){
-                            return value;
+                            return `${internals.modelName}.${value}`;
                         }
                         return `${fieldKey}.${value}`;
                     });
