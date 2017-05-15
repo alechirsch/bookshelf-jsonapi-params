@@ -293,7 +293,7 @@ exports.default = function (Bookshelf) {
                                 if (internals.isBelongsToRelation(relation, _this)) {
                                     var relatedData = _this.related(relation).relatedData;
                                     var relationId = relatedData.foreignKey ? relatedData.foreignKey : _inflection2.default.singularize(relatedData.parentTableName) + '_' + relatedData.parentIdAttribute;
-                                    qb.select(relationId);
+                                    qb.select(internals.modelName + '.' + relationId);
                                 }
                             });
                         });
