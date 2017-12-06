@@ -50,7 +50,14 @@ describe('bookshelf-jsonapi-params', () => {
 
             return _.reduce(attrs, (result, val, key) => {
 
-                result[_.snakeCase(key)] = val;
+                const aggregateFunctions = ['count', 'sum', 'avg', 'max', 'min'];
+
+                if (_.some(aggregateFunctions, (f) => _.startsWith(key, f + '('))) {
+                    result[key] = val;
+                } else {
+                    result[_.snakeCase(key)] = val;
+                }
+
                 return result;
             }, {});
         },
@@ -604,6 +611,7 @@ describe('bookshelf-jsonapi-params', () => {
     });
 
     describe('escape commas in filter', () => {
+
         it('should escape the comma and find a result', (done) => {
             PersonModel
                 .fetchJsonApi({
@@ -633,6 +641,90 @@ describe('bookshelf-jsonapi-params', () => {
         });
     });
 
+    describe('like filtering on non-text fields', () => {
+
+        it('should return the should return all record that have an age that contains the digit "2"', (done) => {
+
+            PersonModel
+                .forge()
+                .fetchJsonApi({
+                    filter: {
+                        like: {
+                            age: '2'
+                        }
+                    }
+                })
+                .then((result) => {
+
+                    expect(result.models).to.have.length(3);
+                    expect(result.models[0].get('firstName')).to.equal('Barney');
+                    expect(result.models[1].get('firstName')).to.equal('Baby Bop');
+                    expect(result.models[2].get('firstName')).to.equal('Boo');
+                    done();
+                });
+        });
+    });
+
+    describe('passing a `fields` parameter with an aggregate function', () => {
+
+        it('should return the total count of records', (done) => {
+
+            PersonModel
+                .forge()
+                .fetchJsonApi({
+                    fields: {
+                        person: ['count(id)']
+                    }
+                })
+                .then((result) => {
+                    expect(result.models).to.have.length(1);
+                    expect(result.models[0].get('count')).to.equal(5);
+                    done();
+                });
+        });
+
+        it('should return the average age per gender', (done) => {
+
+            PersonModel
+                .forge()
+                .fetchJsonApi({
+                    fields: {
+                        person: ['avg(age)','gender']
+                    },
+                    group: ['gender']
+                })
+                .then((result) => {
+                    expect(result.models).to.have.length(2);
+                    expect(result.models[0].get('gender')).to.equal('f');
+                    expect(result.models[0].get('avg')).to.equal((25 + 28) / 2);
+                    expect(result.models[1].get('gender')).to.equal('m');
+                    expect(result.models[1].get('avg')).to.equal((12 + 70 + 3) / 3);
+                    done();
+                });
+        });
+
+        it('should return the sum of the ages of persons with firstName containing \'Ba\'', (done) => {
+
+            PersonModel
+                .forge()
+                .fetchJsonApi({
+                    filter: {
+                        like: {
+                            first_name: 'Ba'
+                        }
+                    },
+                    fields: {
+                        person: ['sum(age)']
+                    }
+                })
+                .then((result) => {
+                    expect(result.models).to.have.length(1);
+                    expect(result.models[0].get('sum')).to.equal(37);
+                    done();
+                });
+        });
+    });
+
     describe('passing default paging parameters to the plugin', () => {
 
         before((done) => {
@@ -657,4 +749,5 @@ describe('bookshelf-jsonapi-params', () => {
                 });
         });
     });
+
 });

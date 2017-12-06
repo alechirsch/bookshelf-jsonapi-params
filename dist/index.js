@@ -41,7 +41,7 @@ function _defineProperty(obj, key, value) { if (key in obj) { Object.definePrope
  * See methods below for details.
  */
 exports.default = function (Bookshelf) {
-    var options = arguments.length <= 1 || arguments[1] === undefined ? {} : arguments[1];
+    var options = arguments.length > 1 && arguments[1] !== undefined ? arguments[1] : {};
 
 
     // Load the pagination plugin
@@ -62,7 +62,7 @@ exports.default = function (Bookshelf) {
      * @return {Promise<Model|Collection|null>}
      */
     var fetchJsonApi = function fetchJsonApi(opts) {
-        var isCollection = arguments.length <= 1 || arguments[1] === undefined ? true : arguments[1];
+        var isCollection = arguments.length > 1 && arguments[1] !== undefined ? arguments[1] : true;
 
         var _this = this;
 
@@ -73,13 +73,14 @@ exports.default = function (Bookshelf) {
         opts = opts || {};
 
         var internals = {};
-        var _opts = opts;
-        var include = _opts.include;
-        var fields = _opts.fields;
-        var sort = _opts.sort;
-        var _opts$page = _opts.page;
-        var page = _opts$page === undefined ? {} : _opts$page;
-        var filter = _opts.filter;
+        var _opts = opts,
+            include = _opts.include,
+            fields = _opts.fields,
+            sort = _opts.sort,
+            _opts$page = _opts.page,
+            page = _opts$page === undefined ? {} : _opts$page,
+            filter = _opts.filter,
+            group = _opts.group;
 
         var filterTypes = ['like', 'not', 'lt', 'gt', 'lte', 'gte'];
 
@@ -87,7 +88,7 @@ exports.default = function (Bookshelf) {
         internals.idAttribute = this.constructor.prototype.idAttribute ? this.constructor.prototype.idAttribute : 'id';
 
         // Get a reference to the current model name. Note that if no type is
-        // explcitly passed, the tableName will be used
+        // explicitly passed, the tableName will be used
         internals.modelName = type ? type : this.constructor.prototype.tableName;
 
         // Initialize an instance of the current model and clone the initial query
@@ -96,14 +97,15 @@ exports.default = function (Bookshelf) {
         });
 
         /**
-         * Build a query for relational dependencies of filtering and sorting
+         * Build a query for relational dependencies of filtering, grouping and sorting
          * @param   filterValues {object}
+         * @param   groupValues {object}
          * @param   sortValues {object}
          */
-        internals.buildDependencies = function (filterValues, sortValues) {
+        internals.buildDependencies = function (filterValues, groupValues, sortValues) {
 
             var relationHash = {};
-            // Find relations in fitlerValues
+            // Find relations in filterValues
             if ((0, _lodash.isObjectLike)(filterValues) && !(0, _lodash.isEmpty)(filterValues)) {
 
                 // Loop through each filter value
@@ -141,10 +143,20 @@ exports.default = function (Bookshelf) {
                 });
             }
 
+            // Find relations in groupValues
+            if ((0, _lodash.isObjectLike)(groupValues) && !(0, _lodash.isEmpty)(groupValues)) {
+
+                // Loop through each group value
+                (0, _lodash.forEach)(groupValues, function (value) {
+
+                    // Add relations to the relationHash
+                    internals.buildDependenciesHelper(value, relationHash);
+                });
+            }
+
             // Need to select model.* so all of the relations are not returned, also check if there is anything in fields object
             if ((0, _lodash.keys)(relationHash).length && !(0, _lodash.keys)(fields).length) {
                 internals.model.query(function (qb) {
-
                     qb.select(internals.modelName + '.*');
                 });
             }
@@ -182,20 +194,18 @@ exports.default = function (Bookshelf) {
                     qb.leftOuterJoin(joinTableName + ' as ' + relationKey + '_' + joinTableName, parentKey + '.' + relatedData.parentIdAttribute, relationKey + '_' + joinTableName + '.' + foreignKey);
                     qb.leftOuterJoin(relatedData.targetTableName + ' as ' + relationKey, relationKey + '_' + joinTableName + '.' + otherKey, relationKey + '.' + relatedData.targetIdAttribute);
                 } else if ((0, _lodash.includes)(relatedData.type, 'morph')) {
-                    (function () {
-                        // Get the morph type and id
-                        var morphType = relatedData.columnNames[0] ? relatedData.columnNames[0] : relatedData.morphName + '_type';
-                        var morphId = relatedData.columnNames[1] ? relatedData.columnNames[0] : relatedData.morphName + '_id';
-                        if (relatedData.type === 'morphOne' || relatedData.type === 'morphMany') {
+                    // Get the morph type and id
+                    var morphType = relatedData.columnNames[0] ? relatedData.columnNames[0] : relatedData.morphName + '_type';
+                    var morphId = relatedData.columnNames[1] ? relatedData.columnNames[0] : relatedData.morphName + '_id';
+                    if (relatedData.type === 'morphOne' || relatedData.type === 'morphMany') {
 
-                            qb.leftOuterJoin(relatedData.targetTableName + ' as ' + relationKey, function (qbJoin) {
+                        qb.leftOuterJoin(relatedData.targetTableName + ' as ' + relationKey, function (qbJoin) {
 
-                                qbJoin.on(relationKey + '.' + morphId, '=', parentKey + '.' + relatedData.parentIdAttribute);
-                            }).where(relationKey + '.' + morphType, '=', relatedData.morphValue);
-                        } else if (relatedData.type === 'morphTo') {
-                            // Not implemented
-                        }
-                    })();
+                            qbJoin.on(relationKey + '.' + morphId, '=', parentKey + '.' + relatedData.parentIdAttribute);
+                        }).where(relationKey + '.' + morphType, '=', relatedData.morphValue);
+                    } else if (relatedData.type === 'morphTo') {
+                        // Not implemented
+                    }
                 }
             });
 
@@ -219,28 +229,26 @@ exports.default = function (Bookshelf) {
                 // The last item in the chain is a column name, not a table. Do not include column name in relationHash
                 key = key.substring(0, key.lastIndexOf('.'));
                 if (!(0, _lodash.has)(relationHash, key)) {
-                    (function () {
-                        var level = relationHash;
-                        var relations = key.split('.');
-                        var relationModel = _this.clone();
+                    var level = relationHash;
+                    var relations = key.split('.');
+                    var relationModel = _this.clone();
 
-                        // Traverse the relationHash object and set new relation if it does not exist
-                        (0, _lodash.forEach)(relations, function (relation) {
+                    // Traverse the relationHash object and set new relation if it does not exist
+                    (0, _lodash.forEach)(relations, function (relation) {
 
-                            // Check if valid relationship
-                            if (typeof relationModel[relation] === 'function' && relationModel[relation]().relatedData.type) {
-                                if (!level[relation]) {
-                                    level[relation] = {};
-                                }
-                                level = level[relation];
-
-                                // Set relation model to the next item in the chain
-                                relationModel = relationModel.related(relation).relatedData.target.forge();
-                            } else {
-                                return false;
+                        // Check if valid relationship
+                        if (typeof relationModel[relation] === 'function' && relationModel[relation]().relatedData.type) {
+                            if (!level[relation]) {
+                                level[relation] = {};
                             }
-                        });
-                    })();
+                            level = level[relation];
+
+                            // Set relation model to the next item in the chain
+                            relationModel = relationModel.related(relation).relatedData.target.forge();
+                        } else {
+                            return false;
+                        }
+                    });
                 }
             }
         };
@@ -250,7 +258,7 @@ exports.default = function (Bookshelf) {
          * @param  fieldNames {object}
          */
         internals.buildFields = function () {
-            var fieldNames = arguments.length <= 0 || arguments[0] === undefined ? {} : arguments[0];
+            var fieldNames = arguments.length > 0 && arguments[0] !== undefined ? arguments[0] : {};
 
 
             if ((0, _lodash.isObject)(fieldNames) && !(0, _lodash.isEmpty)(fieldNames)) {
@@ -264,13 +272,26 @@ exports.default = function (Bookshelf) {
                     // Add qualifying table name to avoid ambiguous columns
                     fieldNames[fieldKey] = (0, _lodash.map)(fieldNames[fieldKey], function (value) {
 
-                        if (!fieldKey) {
-                            if ((0, _lodash.includes)(value, '.')) {
-                                return value;
-                            }
-                            return internals.modelName + '.' + value;
+                        // Extract any aggregate function around the column name
+                        var column = value;
+                        var aggregateFunction = null;
+                        var regex = new RegExp(/(count|sum|avg|max|min)\((.+)\)/g);
+                        var match = regex.exec(value);
+
+                        if (match) {
+                            aggregateFunction = match[1];
+                            column = match[2];
                         }
-                        return fieldKey + '.' + value;
+
+                        if (!fieldKey) {
+                            if (!(0, _lodash.includes)(column, '.')) {
+                                column = internals.modelName + '.' + column;
+                            }
+                        } else {
+                            column = fieldKey + '.' + column;
+                        }
+
+                        return aggregateFunction ? { aggregateFunction: aggregateFunction, column: column } : column;
                     });
 
                     // Only process the field if it's not a relation. Fields
@@ -284,7 +305,14 @@ exports.default = function (Bookshelf) {
                                 qb.distinct();
                             }
 
-                            qb.select(fieldNames[fieldKey]);
+                            (0, _lodash.forEach)(fieldNames[fieldKey], function (column) {
+
+                                if (column.aggregateFunction) {
+                                    qb[column.aggregateFunction](column.column + ' as ' + column.aggregateFunction);
+                                } else {
+                                    qb.select([column]);
+                                }
+                            });
 
                             // JSON API considers relationships as fields, so we
                             // need to make sure the id of the relation is selected
@@ -340,39 +368,37 @@ exports.default = function (Bookshelf) {
 
                                     // Attach different query for each type
                                     if (key === 'like') {
-                                        (function () {
 
-                                            // Need to add double quotes for each table/column name, this is needed if there is a relationship with a capital letter
-                                            var formatedKey = '"' + typeKey.replace('.', '"."') + '"';
-                                            qb.where(function (qbWhere) {
+                                        qb.where(function (qbWhere) {
 
-                                                if ((0, _lodash.isArray)(valueArray)) {
-                                                    (function () {
-                                                        var where = 'where';
-                                                        (0, _lodash.forEach)(valueArray, function (val) {
+                                            if ((0, _lodash.isArray)(valueArray)) {
+                                                var where = 'where';
+                                                (0, _lodash.forEach)(valueArray, function (val) {
 
-                                                            val = '%' + val + '%';
+                                                    qbWhere[where](Bookshelf.knex.raw('LOWER(CAST(:typeKey: AS text)) like LOWER(:value)', {
+                                                        value: '%' + val + '%',
+                                                        typeKey: typeKey
+                                                    }));
 
-                                                            qbWhere[where](Bookshelf.knex.raw('LOWER(' + formatedKey + ') like LOWER(?)', [val]));
+                                                    // Change to orWhere after the first where
+                                                    if (where === 'where') {
+                                                        where = 'orWhere';
+                                                    }
+                                                });
+                                            } else {
+                                                qbWhere.where(Bookshelf.knex.raw('LOWER(CAST(:typeKey: AS text)) like LOWER(:value)', {
+                                                    value: '%' + val + '%',
+                                                    typeKey: typeKey
+                                                }));
+                                            }
 
-                                                            // Change to orWhere after the first where
-                                                            if (where === 'where') {
-                                                                where = 'orWhere';
-                                                            }
-                                                        });
-                                                    })();
-                                                } else {
-                                                    qbWhere.where(Bookshelf.knex.raw('LOWER(' + formatedKey + ') like LOWER(?)', ['%' + typeValue + '%']));
-                                                }
-
-                                                // If the key is in the top level filter, filter on orWhereIn
-                                                if ((0, _lodash.hasIn)(filterValues, typeKey)) {
-                                                    // Determine if there are multiple filters to be applied
-                                                    value = filterValues[typeKey].toString().indexOf(',') !== -1 ? filterValues[typeKey].split(',') : filterValues[typeKey];
-                                                    qbWhere.orWhereIn(typeKey, value);
-                                                }
-                                            });
-                                        })();
+                                            // If the key is in the top level filter, filter on orWhereIn
+                                            if ((0, _lodash.hasIn)(filterValues, typeKey)) {
+                                                // Determine if there are multiple filters to be applied
+                                                value = filterValues[typeKey].toString().indexOf(',') !== -1 ? filterValues[typeKey].split(',') : filterValues[typeKey];
+                                                qbWhere.orWhereIn(typeKey, value);
+                                            }
+                                        });
                                     } else if (key === 'not') {
                                         qb.whereNotIn(typeKey, valueArray);
                                     } else if (key === 'lt') {
@@ -449,42 +475,38 @@ exports.default = function (Bookshelf) {
         internals.buildIncludes = function (includeValues) {
 
             if ((0, _lodash.isArray)(includeValues) && !(0, _lodash.isEmpty)(includeValues)) {
-                (function () {
 
-                    var relations = [];
+                var relations = [];
 
-                    (0, _lodash.forEach)(includeValues, function (relation) {
+                (0, _lodash.forEach)(includeValues, function (relation) {
 
-                        if ((0, _lodash.has)(fields, relation)) {
-                            (function () {
+                    if ((0, _lodash.has)(fields, relation)) {
 
-                                var fieldNames = internals.formatColumnNames(fields);
+                        var fieldNames = internals.formatColumnNames(fields);
 
-                                relations.push(_defineProperty({}, relation, function (qb) {
+                        relations.push(_defineProperty({}, relation, function (qb) {
 
-                                    if (!internals.isBelongsToRelation(relation, _this)) {
-                                        var relatedData = _this[relation]().relatedData;
-                                        var foreignKey = relatedData.foreignKey ? relatedData.foreignKey : _inflection2.default.singularize(relatedData.parentTableName) + '_' + relatedData.parentIdAttribute;
+                            if (!internals.isBelongsToRelation(relation, _this)) {
+                                var relatedData = _this[relation]().relatedData;
+                                var foreignKey = relatedData.foreignKey ? relatedData.foreignKey : _inflection2.default.singularize(relatedData.parentTableName) + '_' + relatedData.parentIdAttribute;
 
-                                        if (!(0, _lodash.includes)(fieldNames[relation], foreignKey)) {
-                                            qb.column.apply(qb, [foreignKey]);
-                                        }
-                                    }
-                                    fieldNames[relation] = internals.getColumnNames(fieldNames[relation]);
-                                    if (!(0, _lodash.includes)(fieldNames[relation], 'id')) {
-                                        qb.column.apply(qb, ['id']);
-                                    }
-                                    qb.column.apply(qb, [fieldNames[relation]]);
-                                }));
-                            })();
-                        } else {
-                            relations.push(relation);
-                        }
-                    });
+                                if (!(0, _lodash.includes)(fieldNames[relation], foreignKey)) {
+                                    qb.column.apply(qb, [foreignKey]);
+                                }
+                            }
+                            fieldNames[relation] = internals.getColumnNames(fieldNames[relation]);
+                            if (!(0, _lodash.includes)(fieldNames[relation], 'id')) {
+                                qb.column.apply(qb, ['id']);
+                            }
+                            qb.column.apply(qb, [fieldNames[relation]]);
+                        }));
+                    } else {
+                        relations.push(relation);
+                    }
+                });
 
-                    // Assign the relations to the options passed to fetch/All
-                    (0, _lodash.assign)(opts, { withRelated: relations });
-                })();
+                // Assign the relations to the options passed to fetch/All
+                (0, _lodash.assign)(opts, { withRelated: relations });
             }
         };
 
@@ -493,32 +515,52 @@ exports.default = function (Bookshelf) {
          * @param  sortValues {array}
          */
         internals.buildSort = function () {
-            var sortValues = arguments.length <= 0 || arguments[0] === undefined ? [] : arguments[0];
+            var sortValues = arguments.length > 0 && arguments[0] !== undefined ? arguments[0] : [];
 
 
             if ((0, _lodash.isArray)(sortValues) && !(0, _lodash.isEmpty)(sortValues)) {
-                (function () {
 
-                    var sortDesc = [];
+                var sortDesc = [];
 
-                    for (var i = 0; i < sortValues.length; ++i) {
+                for (var i = 0; i < sortValues.length; ++i) {
 
-                        // Determine if the sort should be descending
-                        if (typeof sortValues[i] === 'string' && sortValues[i][0] === '-') {
-                            sortValues[i] = sortValues[i].substring(1);
-                            sortDesc.push(sortValues[i]);
-                        }
+                    // Determine if the sort should be descending
+                    if (typeof sortValues[i] === 'string' && sortValues[i][0] === '-') {
+                        sortValues[i] = sortValues[i].substring(1);
+                        sortDesc.push(sortValues[i]);
                     }
+                }
 
-                    // Format column names according to Model settings
-                    sortDesc = internals.formatColumnNames(sortDesc);
-                    sortValues = internals.formatColumnNames(sortValues);
+                // Format column names according to Model settings
+                sortDesc = internals.formatColumnNames(sortDesc);
+                sortValues = internals.formatColumnNames(sortValues);
 
-                    (0, _lodash.forEach)(sortValues, function (sortBy) {
+                (0, _lodash.forEach)(sortValues, function (sortBy) {
 
-                        internals.model.orderBy(sortBy, sortDesc.indexOf(sortBy) === -1 ? 'asc' : 'desc');
+                    internals.model.orderBy(sortBy, sortDesc.indexOf(sortBy) === -1 ? 'asc' : 'desc');
+                });
+            }
+        };
+
+        /**
+         * Build a query based on the `group` parameter.
+         * @param  groupValues {array}
+         */
+        internals.buildGroup = function () {
+            var groupValues = arguments.length > 0 && arguments[0] !== undefined ? arguments[0] : [];
+
+
+            if ((0, _lodash.isArray)(groupValues) && !(0, _lodash.isEmpty)(groupValues)) {
+
+                groupValues = internals.formatColumnNames(groupValues);
+
+                internals.model.query(function (qb) {
+
+                    (0, _lodash.forEach)(groupValues, function (groupBy) {
+
+                        qb.groupBy(groupBy);
                     });
-                })();
+                });
             }
         };
 
@@ -529,7 +571,7 @@ exports.default = function (Bookshelf) {
          * @return {array{}
          */
         internals.formatColumnNames = function () {
-            var columnNames = arguments.length <= 0 || arguments[0] === undefined ? [] : arguments[0];
+            var columnNames = arguments.length > 0 && arguments[0] !== undefined ? arguments[0] : [];
 
 
             (0, _lodash.forEach)(columnNames, function (value, key) {
@@ -629,11 +671,14 @@ exports.default = function (Bookshelf) {
         /// Process parameters
         ////////////////////////////////
 
-        // Apply relational dependencies for filters and sorting
-        internals.buildDependencies(filter, sort);
+        // Apply relational dependencies for filters, grouping and sorting
+        internals.buildDependencies(filter, group, sort);
 
         // Apply filters
         internals.buildFilters(filter);
+
+        // Apply grouping
+        internals.buildGroup(group);
 
         // Apply sorting
         internals.buildSort(sort);

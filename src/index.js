@@ -66,7 +66,7 @@ export default (Bookshelf, options = {}) => {
         opts = opts || {};
 
         const internals = {};
-        const { include, fields, sort, page = {}, filter } = opts;
+        const { include, fields, sort, page = {}, filter, group } = opts;
         const filterTypes = ['like', 'not', 'lt', 'gt', 'lte', 'gte'];
 
         // Get a reference to the field being used as the id
@@ -74,7 +74,7 @@ export default (Bookshelf, options = {}) => {
             this.constructor.prototype.idAttribute : 'id';
 
         // Get a reference to the current model name. Note that if no type is
-        // explcitly passed, the tableName will be used
+        // explicitly passed, the tableName will be used
         internals.modelName = type ? type : this.constructor.prototype.tableName;
 
         // Initialize an instance of the current model and clone the initial query
@@ -82,14 +82,15 @@ export default (Bookshelf, options = {}) => {
             this.constructor.forge().query((qb) => _assign(qb, this.query().clone()));
 
         /**
-         * Build a query for relational dependencies of filtering and sorting
+         * Build a query for relational dependencies of filtering, grouping and sorting
          * @param   filterValues {object}
+         * @param   groupValues {object}
          * @param   sortValues {object}
          */
-        internals.buildDependencies = (filterValues, sortValues) => {
+        internals.buildDependencies = (filterValues, groupValues, sortValues) => {
 
             const relationHash = {};
-            // Find relations in fitlerValues
+            // Find relations in filterValues
             if (_isObjectLike(filterValues) && !_isEmpty(filterValues)){
 
                 // Loop through each filter value
@@ -127,10 +128,20 @@ export default (Bookshelf, options = {}) => {
                 });
             }
 
+            // Find relations in groupValues
+            if (_isObjectLike(groupValues) && !_isEmpty(groupValues)){
+
+                // Loop through each group value
+                _forEach(groupValues, (value) => {
+
+                    // Add relations to the relationHash
+                    internals.buildDependenciesHelper(value, relationHash);
+                });
+            }
+
             // Need to select model.* so all of the relations are not returned, also check if there is anything in fields object
             if (_keys(relationHash).length && !_keys(fields).length){
                 internals.model.query((qb) => {
-
                     qb.select(`${internals.modelName}.*`);
                 });
             }
@@ -255,19 +266,31 @@ export default (Bookshelf, options = {}) => {
                     // Add qualifying table name to avoid ambiguous columns
                     fieldNames[fieldKey] = _map(fieldNames[fieldKey], (value) => {
 
-                        if (!fieldKey){
-                            if (_includes(value, '.')){
-                                return value;
-                            }
-                            return `${internals.modelName}.${value}`;
+                        // Extract any aggregate function around the column name
+                        let column = value;
+                        let aggregateFunction = null;
+                        const regex = new RegExp(/(count|sum|avg|max|min)\((.+)\)/g);
+                        const match = regex.exec(value);
+
+                        if (match) {
+                            aggregateFunction = match[1];
+                            column = match[2];
                         }
-                        return `${fieldKey}.${value}`;
+
+                        if (!fieldKey) {
+                            if (!_includes(column, '.')) {
+                                column = `${internals.modelName}.${column}`;
+                            }
+                        } else {
+                            column = `${fieldKey}.${column}`;
+                        }
+
+                        return aggregateFunction ? { aggregateFunction, column } : column;
                     });
 
                     // Only process the field if it's not a relation. Fields
                     // for relations are processed in `buildIncludes()`
                     if (!_includes(include, fieldKey)) {
-
 
                         // Add columns to query
                         internals.model.query((qb) => {
@@ -276,7 +299,14 @@ export default (Bookshelf, options = {}) => {
                                 qb.distinct();
                             }
 
-                            qb.select(fieldNames[fieldKey]);
+                            _forEach(fieldNames[fieldKey], (column) => {
+
+                                if (column.aggregateFunction) {
+                                    qb[column.aggregateFunction](`${column.column} as ${column.aggregateFunction}`);
+                                } else {
+                                    qb.select([column]);
+                                }
+                            });
 
                             // JSON API considers relationships as fields, so we
                             // need to make sure the id of the relation is selected
@@ -336,18 +366,17 @@ export default (Bookshelf, options = {}) => {
                                     // Attach different query for each type
                                     if (key === 'like'){
 
-                                        // Need to add double quotes for each table/column name, this is needed if there is a relationship with a capital letter
-                                        const formatedKey = `"${typeKey.replace('.', '"."')}"`;
                                         qb.where((qbWhere) => {
 
                                             if (_isArray(valueArray)){
                                                 let where = 'where';
                                                 _forEach(valueArray, (val) => {
 
-                                                    val = `%${val}%`;
-
                                                     qbWhere[where](
-                                                        Bookshelf.knex.raw(`LOWER(${formatedKey}) like LOWER(?)`, [val])
+                                                        Bookshelf.knex.raw('LOWER(CAST(:typeKey: AS text)) like LOWER(:value)', {
+                                                            value: `%${val}%`,
+                                                            typeKey
+                                                        })
                                                     );
 
                                                     // Change to orWhere after the first where
@@ -358,7 +387,10 @@ export default (Bookshelf, options = {}) => {
                                             }
                                             else {
                                                 qbWhere.where(
-                                                    Bookshelf.knex.raw(`LOWER(${formatedKey}) like LOWER(?)`, [`%${typeValue}%`])
+                                                    Bookshelf.knex.raw('LOWER(CAST(:typeKey: AS text)) like LOWER(:value)', {
+                                                        value: `%${val}%`,
+                                                        typeKey
+                                                    })
                                                 );
                                             }
 
@@ -522,6 +554,26 @@ export default (Bookshelf, options = {}) => {
         };
 
         /**
+         * Build a query based on the `group` parameter.
+         * @param  groupValues {array}
+         */
+        internals.buildGroup = (groupValues = []) => {
+
+            if (_isArray(groupValues) && !_isEmpty(groupValues)) {
+
+                groupValues = internals.formatColumnNames(groupValues);
+
+                internals.model.query((qb) => {
+
+                    _forEach(groupValues, (groupBy) => {
+
+                        qb.groupBy(groupBy);
+                    });
+                });
+            }
+        };
+
+        /**
          * Processes incoming parameters that represent columns names and
          * formats them using the internal {@link Model#format} function.
          * @param  columnNames {array}
@@ -633,18 +685,20 @@ export default (Bookshelf, options = {}) => {
         /// Process parameters
         ////////////////////////////////
 
-        // Apply relational dependencies for filters and sorting
-        internals.buildDependencies(filter, sort);
+        // Apply relational dependencies for filters, grouping and sorting
+        internals.buildDependencies(filter, group, sort);
 
         // Apply filters
         internals.buildFilters(filter);
+
+        // Apply grouping
+        internals.buildGroup(group);
 
         // Apply sorting
         internals.buildSort(sort);
 
         // Apply relations
         internals.buildIncludes(include);
-
 
         // Apply sparse fieldsets
         internals.buildFields(fields);
