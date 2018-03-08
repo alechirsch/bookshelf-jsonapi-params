@@ -91,6 +91,13 @@ exports.default = function (Bookshelf) {
         // explicitly passed, the tableName will be used
         internals.modelName = type ? type : this.constructor.prototype.tableName;
 
+        // Used to determine which casting syntax is valid
+        internals.client = Bookshelf.knex.client.config.client;
+        internals.textType = 'text';
+        if (internals.client === 'mysql' && internals.client === 'mssql') {
+            internals.textType = 'char';
+        }
+
         // Initialize an instance of the current model and clone the initial query
         internals.model = this.constructor.forge().query(function (qb) {
             return (0, _lodash.assign)(qb, _this.query().clone());
@@ -186,7 +193,13 @@ exports.default = function (Bookshelf) {
                 if (relatedData.type === 'hasOne' || relatedData.type === 'hasMany') {
                     qb.leftOuterJoin(relatedData.targetTableName + ' as ' + relationKey, parentKey + '.' + relatedData.parentIdAttribute, relationKey + '.' + foreignKey);
                 } else if (relatedData.type === 'belongsTo') {
-                    qb.leftOuterJoin(relatedData.targetTableName + ' as ' + relationKey, parentKey + '.' + foreignKey, relationKey + '.' + relatedData.targetIdAttribute);
+                    if (relatedData.throughTableName) {
+                        var throughTableAlias = relationKey + '_' + relatedData.throughTableName + '_pivot';
+                        qb.leftOuterJoin(relatedData.throughTableName + ' as ' + throughTableAlias, parentKey + '.' + relatedData.parentIdAttribute, throughTableAlias + '.' + relatedData.throughIdAttribute);
+                        qb.leftOuterJoin(relatedData.targetTableName + ' as ' + relationKey, throughTableAlias + '.' + foreignKey, relationKey + '.' + relatedData.targetIdAttribute);
+                    } else {
+                        qb.leftOuterJoin(relatedData.targetTableName + ' as ' + relationKey, parentKey + '.' + foreignKey, relationKey + '.' + relatedData.targetIdAttribute);
+                    }
                 } else if (relatedData.type === 'belongsToMany') {
                     var otherKey = relatedData.otherKey ? relatedData.otherKey : _inflection2.default.singularize(relatedData.targetTableName) + '_id';
                     var joinTableName = relatedData.joinTableName ? relatedData.joinTableName : relatedData.throughTableName;
@@ -375,7 +388,7 @@ exports.default = function (Bookshelf) {
                                                 var where = 'where';
                                                 (0, _lodash.forEach)(valueArray, function (val) {
 
-                                                    qbWhere[where](Bookshelf.knex.raw('LOWER(CAST(:typeKey: AS text)) like LOWER(:value)', {
+                                                    qbWhere[where](Bookshelf.knex.raw('LOWER(CAST(:typeKey: AS ' + internals.textType + ')) like LOWER(:value)', {
                                                         value: '%' + val + '%',
                                                         typeKey: typeKey
                                                     }));
@@ -386,7 +399,7 @@ exports.default = function (Bookshelf) {
                                                     }
                                                 });
                                             } else {
-                                                qbWhere.where(Bookshelf.knex.raw('LOWER(CAST(:typeKey: AS text)) like LOWER(:value)', {
+                                                qbWhere.where(Bookshelf.knex.raw('LOWER(CAST(:typeKey: AS ' + internals.textType + ')) like LOWER(:value)', {
                                                     value: '%' + val + '%',
                                                     typeKey: typeKey
                                                 }));
